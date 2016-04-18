@@ -24,6 +24,7 @@ public class FileManager {
 
 	static {
 		taskQ = new ArrayBlockingQueue<>(50);
+		keyIpMap = new ConcurrentHashMap<>();
 		doneFiles = Collections.newSetFromMap(new ConcurrentHashMap<>());
 	}
 
