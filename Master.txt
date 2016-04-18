@@ -1,0 +1,42 @@
+Client code would be same for mapper side things.
+Only it will change for the reducer side changes.
+All the headings with [Change] are the code changes rest all code would be same
+Basically step 4 and 6 are the code changes.
+
+/**
+	 * Master working:-
+	 * 
+	 * 1) 
+	 * Read instancedetails.csv and cluster.properties
+	 * Read job configuration 
+	 * Upload configuration file to s3 at Bucket\Configuration.properties
+	 * 
+	 * 2) 
+	 * "/start" - for a new job (supporting multiple jobs)
+	 * 
+	 * 3) 
+	 * Get the Input path and read the files and divide by #slaves or file size
+	 * send the files on /files
+	 * 
+	 * 4) [Change]
+	 * listen on /KeysToSlave for keys from the Background Thread.
+     * In the request body find the key
+	 * Maintain a map of keys to Slave ip. 
+     * Check the key in the map if not found assign slave to it based on round robin fashion else return the slave ip	 
+	 * 
+	 * 5)
+	 * listen to /EOM meaning end of mapper
+	 * 
+	 *  
+	 * 6) [Change]
+	 * check if all mapper are done
+	 * once all mapper are done 
+	 * post /reduce to all slaves so that they can start the reduce operation 
+	 * 
+	 * 7)
+	 * listen to /EOR mean end of reducer
+	 * once all reducer are done return true
+	 * 
+	 * @return 
+	 * 		true if job completed successfully else false
+	 */
