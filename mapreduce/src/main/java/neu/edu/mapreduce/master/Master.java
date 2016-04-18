@@ -1,13 +1,17 @@
 package neu.edu.mapreduce.master;
 
 import static org.apache.hadoop.Constants.ClusterProperties.BUCKET;
+import static org.apache.hadoop.Constants.FileConfig.TASK_SPLITTER;
 import static org.apache.hadoop.Constants.CommProperties.EOM_URL;
 import static org.apache.hadoop.Constants.CommProperties.EOR_URL;
 import static org.apache.hadoop.Constants.CommProperties.FILE_URL;
+import static org.apache.hadoop.Constants.CommProperties.KEY_URL;
 import static org.apache.hadoop.Constants.CommProperties.START_JOB_URL;
-import static org.apache.hadoop.Constants.FileNames.JOB_CONF_PROP_FILE_NAME;
-import static org.apache.hadoop.Constants.FileNames.KEY_DIR_SUFFIX;
-import static org.apache.hadoop.Constants.FileNames.MAPPER_OP_DIR;
+import static org.apache.hadoop.Constants.FileConfig.GZ_FILE_EXT;
+import static org.apache.hadoop.Constants.FileConfig.JOB_CONF_PROP_FILE_NAME;
+import static org.apache.hadoop.Constants.FileConfig.KEY_DIR_SUFFIX;
+import static org.apache.hadoop.Constants.FileConfig.MAPPER_OP_DIR;
+import static org.apache.hadoop.Constants.FileConfig.S3_PATH_SEP;
 import static org.apache.hadoop.Constants.JobConf.INPUT_PATH;
 import static org.apache.hadoop.Constants.JobConf.OUTPUT_PATH;
 import static spark.Spark.post;
@@ -41,7 +45,7 @@ public class Master {
 	private List<Node> nodes;
 	private S3Wrapper s3wrapper;
 	private int slaveCount = 0;
-	
+
 	private static AtomicInteger noOfMapReduceDone = new AtomicInteger(0); 
 
 	public Master(Job job) {
@@ -136,6 +140,7 @@ public class Master {
 	private void sendFilesToMapper() {
 		List<S3File> s3Files = s3wrapper.getListOfObjects(job.getConfiguration().get(INPUT_PATH));
 		Collections.sort(s3Files);
+		Collections.reverse(s3Files);
 
 		List<NodeToTask> nodeToFile = new ArrayList<>(nodes.size()); 
 		for (Node node : nodes) {
@@ -143,8 +148,8 @@ public class Master {
 		}
 
 		for (S3File file : s3Files) {
-			if (file.getFileName().endsWith(".gz")) {
-				nodeToFile.get(0).addToTaskLst(file.getFileName());
+			if (file.getFileName().endsWith(GZ_FILE_EXT)) {
+				nodeToFile.get(0).addToTaskLst(file.getFileName(), true);
 				nodeToFile.get(0).addToTotalSize(file.getSize());
 			}
 			Collections.sort(nodeToFile);
@@ -154,7 +159,7 @@ public class Master {
 			NodeCommWrapper.sendData(node.getNode().getPrivateIp(), FILE_URL, node.getTaskLst());
 		}
 	}
-	
+
 	/**
 	 * Step 4 and 6
 	 */
@@ -165,7 +170,7 @@ public class Master {
 			noOfMapReduceDone.incrementAndGet();
 			return response.body().toString();
 		});
-		
+
 		while (noOfMapReduceDone.get() != slaveCount) {
 			try {
 				Thread.sleep(30000);
@@ -173,22 +178,29 @@ public class Master {
 				// TODO
 			}
 		}
-		
+
 		noOfMapReduceDone.set(0);
 	}
-	
+
 	/**
 	 * Step 5
 	 */
-	// TODO 
 	private void sendKeysToReducer() {
 		List<S3File> s3Files = s3wrapper.getListOfObjects(job.getConfiguration().get(OUTPUT_PATH) + MAPPER_OP_DIR);
-		
+
 		Map<String, Long> keyToSize = new HashMap<>();
+		String key = null;
 		for (S3File file : s3Files) {
-			if (file.getFileName().endsWith(KEY_DIR_SUFFIX)) {
-				String key = file.getFileName().
-				keyToSize.put(, 0);
+			String fileName = file.getFileName();
+			if (fileName.endsWith(KEY_DIR_SUFFIX)) {
+				String prefix = fileName.replace(KEY_DIR_SUFFIX, "");
+				key = prefix.substring(prefix.lastIndexOf(S3_PATH_SEP) + 1);
+				keyToSize.put(key, 0l);
+			}
+			else {
+				if (file.getFileName().endsWith(GZ_FILE_EXT)) {
+					keyToSize.put(key, keyToSize.get(key) + file.getSize());
+				}
 			}
 		}
 
@@ -196,17 +208,16 @@ public class Master {
 		for (Node node : nodes) {
 			nodeToFile.add(new NodeToTask(node));
 		}
-		
-		for (S3File file : s3Files) {
-			if (file.getFileName().endsWith(".gz")) {
-				nodeToFile.get(0).addToTaskLst(file.getFileName());
-				nodeToFile.get(0).addToTotalSize(file.getSize());
-			}
+
+		Map<String, Long> sortedMap = Utilities.sortByValue(keyToSize);
+		for (String k : sortedMap.keySet()) {
+			nodeToFile.get(0).addToTaskLst(k, false);
+			nodeToFile.get(0).addToTotalSize(sortedMap.get(k));
 			Collections.sort(nodeToFile);
 		}
 
 		for (NodeToTask node : nodeToFile) {
-			NodeCommWrapper.sendData(node.getNode().getPrivateIp(), FILE_URL, node.getTaskLst());
+			NodeCommWrapper.sendData(node.getNode().getPrivateIp(), KEY_URL, node.getTaskLst());
 		}
 	}
 }
@@ -237,12 +248,23 @@ class NodeToTask implements Comparable<NodeToTask>{
 		return taskLst.toString();
 	}
 
-	public void addToTaskLst(String fileName) {
-		taskLst.append(fileName).append(",");
+	public void addToTaskLst(String taskName, boolean isFile) {
+		if (isFile) {
+			taskLst.append(taskName.substring(taskName.lastIndexOf(S3_PATH_SEP))).append(TASK_SPLITTER);
+		}
+		else {
+			taskLst.append(taskName).append(TASK_SPLITTER);
+		}
 	}
 
 	@Override
 	public int compareTo(NodeToTask o) {
 		return totalSize.compareTo(o.getTotalSize());
+	}
+
+	@Override
+	public String toString() {
+		return "NodeToTask [node=" + node + ", totalSize=" + totalSize
+				+ ", taskLst=" + taskLst + "]";
 	}
 }

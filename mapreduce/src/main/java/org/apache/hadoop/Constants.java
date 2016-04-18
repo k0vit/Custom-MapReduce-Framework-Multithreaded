@@ -16,12 +16,20 @@ public class Constants {
 		public static final String MAPPER_INPUT_VALUE_CLASS = "MapperInputValueClass";
 	}
 
-	public static class FileNames {
+	public static class FileConfig {
 		public static final String JOB_CONF_PROP_FILE_NAME = "configuration.properties";
 		public static final String CLUSTER_PROP_FILE_NAME = "cluster.properties";
 		public static final String INSTANCE_DETAILS_FILE_NAME = "instancedetails.csv";
 		public static final String KEY_DIR_SUFFIX = "_key_dir/";
 		public static final String MAPPER_OP_DIR = "/OutputOfMapper";
+		public static final String S3_PATH_SEP = "/";
+		public static final String GZ_FILE_EXT = ".gz";
+		public static final String S3_URL = "s3://";
+		public static final String TASK_SPLITTER = ",";
+		public static final String OP_OF_MAP = "OutputOfMap";
+		public static final String IP_OF_MAP = "InputOfMap";
+		public static final String IP_OF_REDUCE = "InputOfReducer";
+		public static final String OP_OF_REDUCE = "OutputOfReducer";
 	}
 
 	public static class ClusterProperties {
@@ -37,5 +45,6 @@ public class Constants {
 		public static final String FILE_URL = "/File";
 		public static final String DEFAULT_PORT = "4567";
 		public static final String DEFAULT_DATA = "";
+		public static final String KEY_URL = "/Key";
 	}
 }
