@@ -1,0 +1,25 @@
+Daemon process should be runnign all the time:
+while(true) {
+}
+
+OutOfMap
+	-- <Key>_key_dir
+		-- <Key>_<Timestamp>_<SlaveId>
+		-- <Key>_<Timestamp>_<SlaveId>.DONE
+	-- MAP.END
+
+1 - traverse the map output folder i.e. "OutputOfMap"
+2 - traverse each key folder and look for file with suffix "<filename>.DONE"
+3 - For each done file 
+3.1 -- get the key form the file name 
+3.2 -- check in the map if they key is associated to any reducer slave
+3.3 -- if not then
+3.3.1 -- contact the master on /KeyToSlave
+3.3.2 -- Master should respond with the slave ip
+3.4 -- if slave ip is the same ip on which this background thread is running then 
+3.4.1 -- move the <Key>_<Timestamp>_<SlaveId> corresponding to <Key>_<Timestamp>_<SlaveId>.DONE to folder 
+<home>/InputOfReducer/<Key>_key_dir/<Key>_<Timestamp>_<SlaveId>
+3.5 -- Else download to s3 on BUCKET/InputOfReducer/<Key>_key_dir/<Key>_<Timestamp>_<SlaveId>
+3.5.1 -- Inform the slave on /Keys with the <Key>
+4 - Look for MAP.END
+4.1 -- Once MAP.END is found wait for 30 seconds and System.exit(0) meaning Mapper is done and BT job is done
