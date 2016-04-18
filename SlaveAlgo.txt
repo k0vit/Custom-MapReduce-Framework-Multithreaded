@@ -1,0 +1,70 @@
+Most of the code is same.
+[change] are the steps were change is neeeded.
+Also major thing to do here is multithreaded
+
+/**
+ * 1) 
+ * listen on /Start
+ * For each job there /Start will be called
+ * Create a new Instance of SlaveJob and call the run
+ * 
+ * 2) 
+ * Read cluster.properties
+ * Download and Read configuration.properties
+ * 
+ * 3) 
+ * listen to /file to start the mapper task
+ * stop the server
+ *  
+ * 4) [change] (there is no uploading now) also (make this step multithreaded)
+ * Create a folder called OutputOfMap 
+ * for each file 
+ * -- download the file
+ * -- Instantiate the mapper class 
+ * -- for each record in the file 
+ * ---- call the map method 
+ * -- once the file is done 
+ * ---- call the close on Context to close all the FileWriter (check Context.write on Mapper below)
+ * ---- delete the file
+ * 
+ * 5) 
+ * call /EOM as mapper is done.
+ * 
+ * 6) [change]
+ * listen to /reduce to start the reduce step from the master
+ * 
+ * 7) [change] (make it multi threaded)
+ * Create a folder Output
+ * Get all the key list from <home>/InputOfReducer/  [Change]
+ * For each key 
+ * -- Open file writer to file part-r-00<slaveId>-<file counter>
+ * -- download the key directory from the s3
+ * -- read all the files 
+ * -- generate the iterator
+ * -- Instantiate the reducer class
+ * -- call the reduce method with the iterable
+ * -- Close the file writer once the file is done
+ * -- once done delete the key dir
+ * 
+ * 
+ * 8)  
+ * call /EOR 
+ * once we get the response stop the spark java cluster
+ * 
+ * 
+ * Context.write of Mapper [context.write(key, value)]
+ * -- for each key 
+ * ---- check if the key exist in the map maintained by the Context class [Map<String, FileWriter>]
+ * ---- if the key is not present:
+ * ------ create a dir called <key>_key_dir and create a file with <key>_timestamp_<slaveid> 
+ * ------ open  FileWriter for that file and put in the map
+ * ---- get the FileWriter from the map and write the record to it
+ * ---- Once the file fize if greater than 25mb or 5k records creae a new <Key>_<Timestamp>_<SlaveId>.DONE file.
+ * 
+ * 
+ * Context.write of Reducer [contex.write(key, value)]
+ * -- for each call write the record using the filewriter
+ *  
+ * @author kovit
+ *
+ */
