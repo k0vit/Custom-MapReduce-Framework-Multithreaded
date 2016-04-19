@@ -1,7 +1,11 @@
 package neu.edu.daemon_thread;
 
+import static org.apache.hadoop.Constants.CommProperties.OK;
+import static spark.Spark.post;
+
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
@@ -11,6 +15,12 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.amazonaws.auth.BasicAWSCredentials;
+import com.amazonaws.services.s3.AmazonS3Client;
+
+import neu.edu.utilities.S3Wrapper;
+
+
 public class FileManager {
 	private static Set<String> doneFiles;
 	private static String masterIp;
@@ -18,6 +28,7 @@ public class FileManager {
 	
 	private static Map<String, String> keyIpMap;
 	private static Map<String,Set<File>> waitingMap;
+	private static S3Wrapper s3Wrapper;
 
 	private static final String FILENAME_DELIMITER = "_";
 	private static final String KEY_DIR_SUFFIX = "key_dir/";
@@ -26,12 +37,10 @@ public class FileManager {
 	private static final String DONE_FILE_SUFFIX = ".DONE";
 	private static final String DONE_MAPPING_FILENAME = "MAP.END";
 	private static final String QUERY_URL = "/KeyToSlave";
+	private static final String MAP_OUTPUT_BUCKET = "map";
 	
-	static {
-		keyIpMap = new ConcurrentHashMap<>();
-		waitingMap = new ConcurrentHashMap<>();
-		doneFiles = Collections.newSetFromMap(new ConcurrentHashMap<>());
-	}
+	
+		
 	/**
 	 * main thread
 	 * @throws InterruptedException
@@ -39,19 +48,29 @@ public class FileManager {
 	 */
 	public static void run() throws InterruptedException, IOException {
 		
-		/**
-		 * keeping running until daemon dies and taskQ is empty
-		 * 
-		 * TODO: concurrency, if daemon is still alive and main thread block, but daemon doesnt offer and go die, main thread will be in deadlock
-		 * 1. could use timeout (not 100 percent safe)
-		 * 2. preferred way: figure out a way to signal (daemon check if it is empty, offer a signal file)
-		 */
 		boolean shouldStop = false;
 		while(!shouldStop){
+			checkWaitingMap();
 			shouldStop = reload();
 		}
 		while(!waitingMap.isEmpty()){
 			waitingMap.wait();
+			checkWaitingMap();
+		}
+	}
+	
+	private static void checkWaitingMap() throws IOException, InterruptedException{
+		ArrayList<String> doneKey = new ArrayList<>();
+		for(Map.Entry<String, Set<File>> entry: waitingMap.entrySet()){
+			if (keyIpMap.containsKey(entry.getKey())){
+				for(File f:entry.getValue()){
+					handleTask(f);
+				}
+				doneKey.add(entry.getKey());
+			}
+		}
+		for(String key:doneKey){
+			waitingMap.remove(key);
 		}
 	}
 	
@@ -87,7 +106,8 @@ public class FileManager {
 			}
 		} else {
 			getKeyIp(key);
-			if (!waitingMap.containsKey(key)) waitingMap.put(key, new HashSet<>());
+			if (!waitingMap.containsKey(key))
+				waitingMap.put(key, new HashSet<>());
 			waitingMap.get(key).add(f);
 		}
 	}
@@ -96,19 +116,37 @@ public class FileManager {
 	}
 
 	private static void moveToReduceFolder(File f, String key, String timeStamp, String slaveId) throws IOException {
+		// TODO use threadpool
 		String newPath = REDUCE_FOLDER_PATH + key + KEY_DIR_SUFFIX + key + timeStamp + slaveId;
 		Files.move(Paths.get(f.getAbsolutePath()), Paths.get(newPath), StandardCopyOption.REPLACE_EXISTING);
 	}
 
 	private static void sendToS3(File f, String key, String timeStamp, String slaveId) {
-		// TODO send file to S3 (submit to thread pool)
+		// TODO use threadpool
+		s3Wrapper.uploadFileS3(MAP_OUTPUT_BUCKET, f);
 	}
 
-
+	private static void receiveKeySlaveIp(){
+		post(QUERY_URL, (request, response) -> {
+			response.status(OK);
+			String[] res = request.body().split(":");
+			String key = res[0];
+			String slaveIp = res[1];
+			keyIpMap.put(key, slaveIp);
+			waitingMap.notifyAll();
+			return response.body().toString();
+		});
+	}
 
 	public static void main(String[] args) {
 		masterIp = args[0];
 		selfIp = args[1];
+		keyIpMap = new ConcurrentHashMap<>();
+		waitingMap = new ConcurrentHashMap<>();
+		doneFiles = Collections.newSetFromMap(new ConcurrentHashMap<>());
+		s3Wrapper = new S3Wrapper(new AmazonS3Client(new BasicAWSCredentials
+				(args[2], args[3])));
+		receiveKeySlaveIp();
 		try {
 			run();
 		} catch (Exception e) {
