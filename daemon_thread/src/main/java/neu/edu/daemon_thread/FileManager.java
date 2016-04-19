@@ -1,6 +1,7 @@
 package neu.edu.daemon_thread;
 
 import static org.apache.hadoop.Constants.CommProperties.OK;
+import static org.apache.hadoop.Constants.CommProperties.DEFAULT_PORT;
 import static spark.Spark.post;
 
 import java.io.File;
@@ -18,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.services.s3.AmazonS3Client;
 
+import neu.edu.utilities.NodeCommWrapper;
 import neu.edu.utilities.S3Wrapper;
 
 
@@ -113,6 +115,7 @@ public class FileManager {
 	}
 	
 	private static void getKeyIp(String key) {
+		NodeCommWrapper.sendData(masterIp, DEFAULT_PORT, QUERY_URL, key);
 	}
 
 	private static void moveToReduceFolder(File f, String key, String timeStamp, String slaveId) throws IOException {
@@ -125,7 +128,10 @@ public class FileManager {
 		// TODO use threadpool
 		s3Wrapper.uploadFileS3(MAP_OUTPUT_BUCKET, f);
 	}
-
+	
+	/**
+	 * expecting response: [key]:[ip]
+	 */
 	private static void receiveKeySlaveIp(){
 		post(QUERY_URL, (request, response) -> {
 			response.status(OK);
