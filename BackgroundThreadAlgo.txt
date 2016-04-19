@@ -19,7 +19,7 @@ OutOfMap
 3.4 -- if slave ip is the same ip on which this background thread is running then 
 3.4.1 -- move the <Key>_<Timestamp>_<SlaveId> corresponding to <Key>_<Timestamp>_<SlaveId>.DONE to folder 
 <home>/InputOfReducer/<Key>_key_dir/<Key>_<Timestamp>_<SlaveId>
-3.5 -- Else download to s3 on BUCKET/InputOfReducer/<Key>_key_dir/<Key>_<Timestamp>_<SlaveId>
+3.5 -- Else upload to s3 on BUCKET/InputOfReducer/<Key>_key_dir/<Key>_<Timestamp>_<SlaveId>
 3.5.1 -- Inform the slave on /Keys with the <Key>
 4 - Look for MAP.END
 4.1 -- Once MAP.END is found wait for 30 seconds and System.exit(0) meaning Mapper is done and BT job is done
