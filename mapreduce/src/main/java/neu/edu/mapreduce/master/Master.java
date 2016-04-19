@@ -171,10 +171,17 @@ public class Master {
 	/**
 	 * Step 4 and 6
 	 */
+	private Map<String,Node> keysToNode = new HashMap<>();
+	private int nextSlave = 0;
 	private void listenToEndOfMapReduce(String url) {
 		post(url, (request, response) -> {
+			String key = request.body();
 			response.status(OK);
-			response.body(SUCCESS);
+			if(!keysToNode.containsKey(key)){
+				keysToNode.put(key, nodes.get(nextSlave));
+				nextSlave++;
+			}
+			response.body(keysToNode.get(key).getPrivateIp());
 			noOfMapReduceDone.incrementAndGet();
 			log.info("Recieved end of  mapper signal from " + noOfMapReduceDone.get() + " mapper out of " + 
 					(nodes.size() - 1));
