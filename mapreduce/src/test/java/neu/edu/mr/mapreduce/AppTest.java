@@ -130,8 +130,8 @@ extends TestCase
 			Mapper<?,?,?,?> mapper = (Mapper<?, ?, ?, ?>) mapperClass.newInstance();
 			java.lang.reflect.Method mthd = mapperClass.getMethod("map", KEYIN, VALUEIN, Mapper.Context.class);
 			mthd.invoke(mapper, keyIn, valueIn, mapper.new Context());
-			List<Text> k = new ArrayList<>();
-			k.add(new Text("value"));
+			List<Object> k = new ArrayList<>();
+			k.add(valueIn);
 
 			Reducer<?,?,?,?> reducer = (Reducer<?, ?, ?, ?>) TestReducer.class.newInstance();
 			java.lang.reflect.Method mthdr = TestReducer.class.getMethod

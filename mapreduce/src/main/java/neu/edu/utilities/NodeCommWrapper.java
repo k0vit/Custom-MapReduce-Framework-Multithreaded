@@ -23,7 +23,7 @@ public class NodeCommWrapper {
 
 	public static void sendData(String nodeIp, String port, String requestUrl, String data) {
 		String address = "http://" + nodeIp + ":" + port + "/" + requestUrl;
-		log.info(String.format("Sending data to %s", address));
+		log.info(String.format("Posting %s to %s", data, address));
 		try {
 			//Unirest.setTimeouts(10000, 120000);
 			Unirest.post(address).body(data).asString();
@@ -31,7 +31,7 @@ public class NodeCommWrapper {
 			log.severe("Exception sending post request: " + e.getMessage());
 			log.severe("RETRY sending file");
 			try {
-				Thread.sleep(20000);
+				Thread.sleep(30000);
 			} catch (InterruptedException e1) {
 				log.info(e1.getMessage());
 			}

@@ -1,18 +1,21 @@
 package neu.edu.mapreduce.master;
 
 import static org.apache.hadoop.Constants.ClusterProperties.BUCKET;
-import static org.apache.hadoop.Constants.FileConfig.TASK_SPLITTER;
 import static org.apache.hadoop.Constants.CommProperties.EOM_URL;
 import static org.apache.hadoop.Constants.CommProperties.EOR_URL;
 import static org.apache.hadoop.Constants.CommProperties.FILE_URL;
 import static org.apache.hadoop.Constants.CommProperties.KEY_URL;
+import static org.apache.hadoop.Constants.CommProperties.OK;
 import static org.apache.hadoop.Constants.CommProperties.START_JOB_URL;
+import static org.apache.hadoop.Constants.CommProperties.SUCCESS;
 import static org.apache.hadoop.Constants.FileConfig.GZ_FILE_EXT;
 import static org.apache.hadoop.Constants.FileConfig.JOB_CONF_PROP_FILE_NAME;
 import static org.apache.hadoop.Constants.FileConfig.KEY_DIR_SUFFIX;
 import static org.apache.hadoop.Constants.FileConfig.MAPPER_OP_DIR;
 import static org.apache.hadoop.Constants.FileConfig.S3_PATH_SEP;
+import static org.apache.hadoop.Constants.FileConfig.TASK_SPLITTER;
 import static org.apache.hadoop.Constants.JobConf.INPUT_PATH;
+import static org.apache.hadoop.Constants.JobConf.JOB_NAME;
 import static org.apache.hadoop.Constants.JobConf.OUTPUT_PATH;
 import static spark.Spark.post;
 
@@ -104,6 +107,7 @@ public class Master {
 				(clusterProperties.getProperty("AccessKey"), clusterProperties.getProperty("SecretKey"))));
 		nodes = Utilities.readInstanceDetails();
 		readAndUploadConfiguration();
+		log.info("Master setup complete");
 	}
 
 	private void readAndUploadConfiguration() {
@@ -115,10 +119,10 @@ public class Master {
 				writer.println(sb.toString());
 			}
 			writer.close();
-			s3wrapper.uploadFile(JOB_CONF_PROP_FILE_NAME, clusterProperties.getProperty(BUCKET));
+			s3wrapper.uploadFileToBucket(JOB_CONF_PROP_FILE_NAME, clusterProperties.getProperty(BUCKET));
 		}
 		catch (Exception e) {
-			// TODO
+			log.severe("Failed to read job configuration file. Reason:" + e.getMessage());
 		}
 	}
 
@@ -126,9 +130,10 @@ public class Master {
 	 * Step 2
 	 */
 	private void startJob() {
+		log.info("Starting mapper");
 		for (Node node: nodes) {
 			if (node.isSlave()) {
-				NodeCommWrapper.sendData(node.getPrivateIp(), START_JOB_URL);
+				NodeCommWrapper.sendData(node.getPrivateIp(), START_JOB_URL, job.getConfiguration().get(JOB_NAME));
 				slaveCount++;
 			}
 		}
@@ -154,6 +159,9 @@ public class Master {
 			}
 			Collections.sort(nodeToFile);
 		}
+		
+		log.info("File distribution");
+		log.info(nodeToFile.toString());
 
 		for (NodeToTask node : nodeToFile) {
 			NodeCommWrapper.sendData(node.getNode().getPrivateIp(), FILE_URL, node.getTaskLst());
@@ -165,9 +173,11 @@ public class Master {
 	 */
 	private void listenToEndOfMapReduce(String url) {
 		post(url, (request, response) -> {
-			response.status(200);
-			response.body("SUCCESS");
+			response.status(OK);
+			response.body(SUCCESS);
 			noOfMapReduceDone.incrementAndGet();
+			log.info("Recieved end of  mapper signal from " + noOfMapReduceDone.get() + " mapper out of " + 
+					(nodes.size() - 1));
 			return response.body().toString();
 		});
 
@@ -175,7 +185,7 @@ public class Master {
 			try {
 				Thread.sleep(30000);
 			} catch (InterruptedException e) {
-				// TODO
+				log.severe("Sleep interrupted while waiting for End of mapper signal");
 			}
 		}
 
@@ -196,6 +206,7 @@ public class Master {
 				String prefix = fileName.replace(KEY_DIR_SUFFIX, "");
 				key = prefix.substring(prefix.lastIndexOf(S3_PATH_SEP) + 1);
 				keyToSize.put(key, 0l);
+				log.info("Found key " + key);
 			}
 			else {
 				if (file.getFileName().endsWith(GZ_FILE_EXT)) {
@@ -203,20 +214,25 @@ public class Master {
 				}
 			}
 		}
-
-		List<NodeToTask> nodeToFile = new ArrayList<>(nodes.size()); 
+		
+		List<NodeToTask> nodeToKey = new ArrayList<>(nodes.size()); 
 		for (Node node : nodes) {
-			nodeToFile.add(new NodeToTask(node));
+			nodeToKey.add(new NodeToTask(node));
 		}
 
 		Map<String, Long> sortedMap = Utilities.sortByValue(keyToSize);
+		log.info(sortedMap.toString());
+		
 		for (String k : sortedMap.keySet()) {
-			nodeToFile.get(0).addToTaskLst(k, false);
-			nodeToFile.get(0).addToTotalSize(sortedMap.get(k));
-			Collections.sort(nodeToFile);
+			nodeToKey.get(0).addToTaskLst(k, false);
+			nodeToKey.get(0).addToTotalSize(sortedMap.get(k));
+			Collections.sort(nodeToKey);
 		}
+		
+		log.info("Key Distribution");
+		log.info(nodeToKey.toString());
 
-		for (NodeToTask node : nodeToFile) {
+		for (NodeToTask node : nodeToKey) {
 			NodeCommWrapper.sendData(node.getNode().getPrivateIp(), KEY_URL, node.getTaskLst());
 		}
 	}
