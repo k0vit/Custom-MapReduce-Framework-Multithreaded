@@ -20,6 +20,11 @@ import org.apache.hadoop.mapreduce.Mapper.Context;
 import neu.edu.utilities.S3Wrapper;
 import neu.edu.utilities.Utilities;
 
+/**
+ * 
+ * @author naineel
+ *
+ */
 public class MultiProcessFiles implements Runnable {
 	private static final Logger log = Logger.getLogger(MultiProcessFiles.class.getName());
 	private String filename;

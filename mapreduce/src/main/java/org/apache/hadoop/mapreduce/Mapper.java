@@ -15,6 +15,11 @@ import java.util.logging.Logger;
 
 import neu.edu.utilities.Utilities;
 
+/**
+ * @author-kovit
+ * @author naineel
+ *
+ */
 public class Mapper<KEYIN, VALUEIN, KEYOUT, VALUEOUT> {
 
 	private static final Logger log = Logger.getLogger(Mapper.class.getName());

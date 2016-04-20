@@ -24,6 +24,11 @@ import org.apache.hadoop.mapreduce.Reducer;
 import neu.edu.utilities.S3Wrapper;
 import neu.edu.utilities.Utilities;
 
+/**
+ * 
+ * @author naineel
+ *
+ */
 public class MultiKeyProcessing implements Runnable {
 	private static final Logger log = Logger.getLogger(MultiKeyProcessing.class.getName());
 	private String key;
