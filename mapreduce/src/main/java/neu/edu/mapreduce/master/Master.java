@@ -7,16 +7,15 @@ import static org.apache.hadoop.Constants.CommProperties.FILE_URL;
 import static org.apache.hadoop.Constants.CommProperties.KEY_URL;
 import static org.apache.hadoop.Constants.CommProperties.OK;
 import static org.apache.hadoop.Constants.CommProperties.START_JOB_URL;
-import static org.apache.hadoop.Constants.CommProperties.SUCCESS;
 import static org.apache.hadoop.Constants.FileConfig.GZ_FILE_EXT;
+import static org.apache.hadoop.Constants.FileConfig.IP_OF_REDUCE;
 import static org.apache.hadoop.Constants.FileConfig.JOB_CONF_PROP_FILE_NAME;
 import static org.apache.hadoop.Constants.FileConfig.KEY_DIR_SUFFIX;
-import static org.apache.hadoop.Constants.FileConfig.MAPPER_OP_DIR;
 import static org.apache.hadoop.Constants.FileConfig.S3_PATH_SEP;
 import static org.apache.hadoop.Constants.FileConfig.TASK_SPLITTER;
 import static org.apache.hadoop.Constants.JobConf.INPUT_PATH;
 import static org.apache.hadoop.Constants.JobConf.JOB_NAME;
-import static org.apache.hadoop.Constants.JobConf.OUTPUT_PATH;
+import static org.apache.hadoop.Constants.MapReduce.NOKEY;
 import static spark.Spark.post;
 
 import java.io.PrintWriter;
@@ -91,9 +90,9 @@ public class Master {
 		setup();
 		startJob();
 		sendFilesToMapper();
-		listenToEndOfMapReduce(EOM_URL);
+		listenToEndOfMapReduce(EOM_URL, "Mapper");
 		sendKeysToReducer();
-		listenToEndOfMapReduce(EOR_URL);
+		listenToEndOfMapReduce(EOR_URL, "Reducer");
 
 		return true;
 	}
@@ -149,7 +148,9 @@ public class Master {
 
 		List<NodeToTask> nodeToFile = new ArrayList<>(nodes.size()); 
 		for (Node node : nodes) {
-			nodeToFile.add(new NodeToTask(node));
+			if (node.isSlave()) {
+				nodeToFile.add(new NodeToTask(node));
+			}
 		}
 
 		for (S3File file : s3Files) {
@@ -173,7 +174,7 @@ public class Master {
 	 */
 	private Map<String,Node> keysToNode = new HashMap<>();
 	private int nextSlave = 0;
-	private void listenToEndOfMapReduce(String url) {
+	private void listenToEndOfMapReduce(String url, String taskType) {
 		post(url, (request, response) -> {
 			String key = request.body();
 			response.status(OK);
@@ -183,8 +184,8 @@ public class Master {
 			}
 			response.body(keysToNode.get(key).getPrivateIp());
 			noOfMapReduceDone.incrementAndGet();
-			log.info("Recieved end of  mapper signal from " + noOfMapReduceDone.get() + " mapper out of " + 
-					(nodes.size() - 1));
+			log.info("Recieved end of " + taskType + " signal from " + noOfMapReduceDone.get() +
+					" " +  taskType + " out of " + (nodes.size() - 1));
 			return response.body().toString();
 		});
 
@@ -203,28 +204,27 @@ public class Master {
 	 * Step 5
 	 */
 	private void sendKeysToReducer() {
-		List<S3File> s3Files = s3wrapper.getListOfObjects(job.getConfiguration().get(OUTPUT_PATH) + MAPPER_OP_DIR);
-
+		List<S3File> s3Files = s3wrapper.getListOfObjects(clusterProperties.get(BUCKET) + S3_PATH_SEP + IP_OF_REDUCE);
 		Map<String, Long> keyToSize = new HashMap<>();
 		String key = null;
 		for (S3File file : s3Files) {
 			String fileName = file.getFileName();
-			if (fileName.endsWith(KEY_DIR_SUFFIX)) {
-				String prefix = fileName.replace(KEY_DIR_SUFFIX, "");
-				key = prefix.substring(prefix.lastIndexOf(S3_PATH_SEP) + 1);
-				keyToSize.put(key, 0l);
-				log.info("Found key " + key);
-			}
-			else {
-				if (file.getFileName().endsWith(GZ_FILE_EXT)) {
-					keyToSize.put(key, keyToSize.get(key) + file.getSize());
+			String keyDir = fileName.substring(fileName.indexOf(S3_PATH_SEP) + 1, fileName.lastIndexOf(S3_PATH_SEP) + 1);
+			if (keyDir.endsWith(KEY_DIR_SUFFIX)) {
+				key = keyDir.replace(KEY_DIR_SUFFIX, "");
+				if (!keyToSize.containsKey(key)) {
+					log.info("Found key " + key);
+					keyToSize.put(key, 0l);
 				}
+				keyToSize.put(key, keyToSize.get(key) + file.getSize());
 			}
 		}
 		
 		List<NodeToTask> nodeToKey = new ArrayList<>(nodes.size()); 
 		for (Node node : nodes) {
-			nodeToKey.add(new NodeToTask(node));
+			if (node.isSlave()) {
+				nodeToKey.add(new NodeToTask(node));
+			}
 		}
 
 		Map<String, Long> sortedMap = Utilities.sortByValue(keyToSize);
@@ -267,13 +267,18 @@ class NodeToTask implements Comparable<NodeToTask>{
 	}
 
 	public String getTaskLst() {
-		taskLst.deleteCharAt(taskLst.length() - 1);
-		return taskLst.toString();
+		if (taskLst.length() != 0) {
+			taskLst.deleteCharAt(taskLst.length() - 1);
+			return taskLst.toString();
+		}
+		else {
+			return NOKEY;
+		}
 	}
 
 	public void addToTaskLst(String taskName, boolean isFile) {
 		if (isFile) {
-			taskLst.append(taskName.substring(taskName.lastIndexOf(S3_PATH_SEP))).append(TASK_SPLITTER);
+			taskLst.append(taskName.substring(taskName.lastIndexOf(S3_PATH_SEP) + 1)).append(TASK_SPLITTER);
 		}
 		else {
 			taskLst.append(taskName).append(TASK_SPLITTER);

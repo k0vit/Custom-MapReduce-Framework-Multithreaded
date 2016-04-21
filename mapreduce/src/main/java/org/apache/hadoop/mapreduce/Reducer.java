@@ -1,11 +1,11 @@
 package org.apache.hadoop.mapreduce;
 
 import static org.apache.hadoop.Constants.ClusterProperties.ACCESS_KEY;
-import static org.apache.hadoop.Constants.ClusterProperties.BUCKET;
 import static org.apache.hadoop.Constants.ClusterProperties.SECRET_KEY;
 import static org.apache.hadoop.Constants.FileConfig.OP_OF_REDUCE;
 import static org.apache.hadoop.Constants.FileConfig.PART_FILE_PREFIX;
 import static org.apache.hadoop.Constants.FileConfig.S3_PATH_SEP;
+import static org.apache.hadoop.Constants.JobConf.OUTPUT_PATH;
 import static org.apache.hadoop.Constants.JobConf.REDUCER_OP_SEPARATOR;
 
 import java.io.BufferedWriter;
@@ -57,7 +57,7 @@ public class Reducer<KEYIN,VALUEIN,KEYOUT,VALUEOUT> {
 			fileFullPath = OP_OF_REDUCE + File.separator + PART_FILE_PREFIX + slaveId + counter;
 			try {
 				log.info("Creating file " + fileFullPath);
-				bw = new BufferedWriter(new FileWriter(fileFullPath));
+				bw = new BufferedWriter(new FileWriter(fileFullPath, true));
 			} catch (IOException e) {
 				log.severe("Failed to create BufferedWriter for file " + fileFullPath 
 						+ ". Reason: " + e.getMessage());
@@ -67,7 +67,8 @@ public class Reducer<KEYIN,VALUEIN,KEYOUT,VALUEOUT> {
 		@Override
 		public void write(KEYOUT key, VALUEOUT value) {
 			try {
-				bw.write(key.toString() + getConfiguration().get(REDUCER_OP_SEPARATOR) + value.toString());
+				bw.write(key.toString() + getConfiguration().get(REDUCER_OP_SEPARATOR) + value.toString() + 
+						System.getProperty("line.separator"));
 			} catch (IOException e) {
 				log.severe("Failed to write record with key as " + key.toString() + " and value as " 
 						+ value.toString() + ". Reason: " + e.getMessage());
@@ -88,20 +89,20 @@ public class Reducer<KEYIN,VALUEIN,KEYOUT,VALUEOUT> {
 
 		private void uploadToS3() {
 			File fileToUpload = new File(fileFullPath);
-			String s3FullPath = clusterProperties.getProperty(BUCKET) + S3_PATH_SEP + fileToUpload.getName();
+			String s3FullPath = getConfiguration().get(OUTPUT_PATH) + S3_PATH_SEP + fileToUpload.getName();
 			log.info("Upload reducer output from " + fileFullPath + " to " + s3FullPath) ;
 			s3wrapper.uploadFileS3(s3FullPath, fileToUpload);
 		}
 	}
 
-	public void setup(Context context) throws IOException, InterruptedException {};
+	protected void setup(Context context) throws IOException, InterruptedException {};
 
 	@SuppressWarnings("unchecked")
-	public void reduce(KEYIN key, Iterable<VALUEIN> values, Context context) throws IOException, InterruptedException {
+	protected void reduce(KEYIN key, Iterable<VALUEIN> values, Context context) throws IOException, InterruptedException {
 		for (VALUEIN value : values) {
 			context.write((KEYOUT) key, (VALUEOUT) value);
 		}
 	};
 
-	public void cleanup(Context context) throws IOException, InterruptedException {}
+	protected void cleanup(Context context) throws IOException, InterruptedException {}
 }

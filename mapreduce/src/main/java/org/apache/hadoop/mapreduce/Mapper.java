@@ -57,17 +57,18 @@ public class Mapper<KEYIN, VALUEIN, KEYOUT, VALUEOUT> {
 
 		@Override
 		public void write(KEYOUT key, VALUEOUT value) {
-			if (!keyToObject.containsKey(key)) {
+			if (!keyToObject.containsKey(key.toString())) {
 				String filePath = System.getProperty("user.dir") 
 						+ File.separator + OP_OF_MAP + File.separator
-						+ key + KEY_DIR_SUFFIX + File.separator + key + "_" +
-						(new SimpleDateFormat("yyyyMMddhhmm'.txt'").format(new Date())) 
+						+ key + KEY_DIR_SUFFIX + key + "_" +
+						(new SimpleDateFormat("yyyyMMddhhmm").format(new Date())) 
 						+ slaveId;
 
 				try {
 					log.info("Creating mapper output file " + filePath);
 					File f = new File(filePath);
 					if (!f.exists()) {
+						f.getParentFile().mkdirs();
 						f.createNewFile();
 					}
 					
@@ -96,8 +97,8 @@ public class Mapper<KEYIN, VALUEIN, KEYOUT, VALUEOUT> {
 					
 					String filePath = System.getProperty("user.dir") 
 							+ File.separator + OP_OF_MAP + File.separator
-							+ key + KEY_DIR_SUFFIX + File.separator + key + "_" +
-							(new SimpleDateFormat("yyyyMMddhhmm'.txt'").format(new Date())) 
+							+ key + KEY_DIR_SUFFIX + key + "_" +
+							(new SimpleDateFormat("yyyyMMddhhmm").format(new Date())) 
 							+ slaveId;
 					fileInfo.setCount(0);
 					fileInfo.setFilePath(filePath);
@@ -161,14 +162,14 @@ public class Mapper<KEYIN, VALUEIN, KEYOUT, VALUEOUT> {
 //		}
 	}
 
-	public void setup(Context context) throws IOException, InterruptedException {};
+	protected void setup(Context context) throws IOException, InterruptedException {};
 
 	@SuppressWarnings("unchecked")
-	public void map(KEYIN key, VALUEIN value, Context context) throws IOException, InterruptedException {
+	protected void map(KEYIN key, VALUEIN value, Context context) throws IOException, InterruptedException {
 		context.write((KEYOUT) key, (VALUEOUT) value); 
 	}
 
-	public void cleanup(Context context) throws IOException, InterruptedException {}
+	protected void cleanup(Context context) throws IOException, InterruptedException {}
 	
 	public static class FileInfo {
 		private BufferedWriter writer;

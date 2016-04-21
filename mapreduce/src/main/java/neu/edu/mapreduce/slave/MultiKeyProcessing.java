@@ -12,6 +12,8 @@ import static org.apache.hadoop.Constants.MapReduce.REDUCE_METHD_NAME;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.LinkedList;
 import java.util.List;
@@ -46,7 +48,8 @@ public class MultiKeyProcessing implements Runnable {
 	@Override
 	public void run() {
 		log.info(String.format("[Thread %d] Start processing key: %s", threadNo, key));
-		String keyDirPath = downloadKeyFiles(key);
+		String keyDir = (key + KEY_DIR_SUFFIX);
+		String keyDirPath = IP_OF_REDUCE + File.separator + keyDir;
 		Reducer<?,?,?,?> reducer = getReducerInstance();
 		Reducer<?, ?, ?, ?>.Context context = reducer.new Context();
 		log.info(String.format("[Thread %d] Starting processing key from path: %s", threadNo, keyDirPath));
@@ -56,29 +59,18 @@ public class MultiKeyProcessing implements Runnable {
 		log.info(String.format("[Thread %d] Folder: %s deleted successfully", threadNo, keyDirPath));
 	}
 
-	private String downloadKeyFiles(String key) {
-		log.info(String.format("[Thread %d] Download files for key: %s", threadNo, key));
-		String keyDir = (key + KEY_DIR_SUFFIX);
-		String keyDirLocalPath = IP_OF_REDUCE + File.separator + keyDir;
-		String s3KeyDir = BUCKET + S3_PATH_SEP + keyDir;
-		log.info(String.format("[Thread %d] Downloading from S3 path: %s", threadNo, s3KeyDir));
-		s3wrapper.downloadAndStoreFileInLocal(s3KeyDir, System.getProperty("user.dir"));
-		log.info(String.format("[Thread %d] Downloaded  %s and stored "
-				+ "successfully in local file system @ %s", threadNo, s3KeyDir, 
-				System.getProperty("user.dir")));
-		return keyDirLocalPath;
-	}
-	
 	private Reducer<?, ?, ?, ?> getReducerInstance() {
 		Reducer<?, ?, ?, ?> reducer = null;
 		try {
-			reducer = (Reducer<?, ?, ?, ?>) getMapreduceClass(
-					jobConfiguration.getProperty(REDUCER_CLASS)).newInstance();
+			Class<?> cls = getMapreduceClass(jobConfiguration.getProperty(REDUCER_CLASS));
+			Constructor<?> ctor = cls.getDeclaredConstructor();
+			ctor.setAccessible(true);
+			reducer = (Reducer<?, ?, ?, ?>) ctor.newInstance();
 			if (reducer != null) {
 				log.info(String.format("[Thread %d] Reducer class instantiated "
 						+ "successfully %s", threadNo, jobConfiguration.getProperty(REDUCER_CLASS)));
 			}
-		} catch (InstantiationException | IllegalAccessException e) {
+		} catch (InstantiationException | IllegalAccessException | NoSuchMethodException | SecurityException | IllegalArgumentException | InvocationTargetException e) {
 			log.severe(String.format("[Thread %d] Failed to create an instance of reducer class %s. Reason: %s", threadNo, reducer, e.getMessage()));
 			log.severe(String.format("[Thread %d] Stacktrace: %s", threadNo, Utilities.printStackTrace(e)));
 		}
@@ -91,9 +83,10 @@ public class MultiKeyProcessing implements Runnable {
 		Class<?> KEYIN = getReducerInputClass(jobConfiguration.getProperty(MAP_OUTPUT_KEY_CLASS));
 		try {
 			Method mthdr = getMapreduceClass(jobConfiguration.getProperty(REDUCER_CLASS))
-					.getMethod(REDUCE_METHD_NAME, KEYIN, Iterable.class, Reducer.Context.class);
+					.getDeclaredMethod(REDUCE_METHD_NAME, KEYIN, Iterable.class, Reducer.Context.class);
 			Object keyInst = KEYIN.getConstructor(String.class).newInstance(key);
 			log.info(String.format("[Thread %d] Invoking Reduce method", threadNo));
+			mthdr.setAccessible(true);
 			mthdr.invoke(reducer, keyInst, getIterableValue(keyDirPath, key), context);
 		}
 		catch (Exception e) {

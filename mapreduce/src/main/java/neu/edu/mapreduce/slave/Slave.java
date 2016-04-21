@@ -16,6 +16,7 @@ import static org.apache.hadoop.Constants.FileConfig.OP_OF_MAP;
 import static org.apache.hadoop.Constants.FileConfig.OP_OF_REDUCE;
 import static org.apache.hadoop.Constants.FileConfig.S3_PATH_SEP;
 import static org.apache.hadoop.Constants.FileConfig.TASK_SPLITTER;
+import static org.apache.hadoop.Constants.FileConfig.KEY_DIR_SUFFIX;
 import static spark.Spark.post;
 import static spark.Spark.stop;
 
@@ -108,7 +109,7 @@ import neu.edu.utilities.Utilities;
 public class Slave {
 	private static final Logger log = Logger.getLogger(Slave.class.getName());
 
-	public static void main() {
+	public static void main(String[] args) {
 		/**
 		 * step 1
 		 */
@@ -117,6 +118,7 @@ public class Slave {
 			response.status(OK);
 			response.body(SUCCESS);
 			(new Thread(new SlaveJob())).start();
+			log.info("Started new thread to handle the job " + request.body());
 			return response.body().toString();
 		});
 	}
@@ -136,19 +138,52 @@ class SlaveJob implements Runnable {
 
 	@Override
 	public void run() {
-		setup();
 		map();
 		reduce();
 		tearDown();
 	}
 
+	private void map() { 
+		log.info("Starting map task");
+		readFiles();
+		setup();
+		processFiles();
+		log.info("All files processed, signalling end of mapper phase");
+		NodeCommWrapper.sendData(masterIp, EOM_URL);
+	}
+
+	private void readFiles() {
+		log.info("Listening on " + FILE_URL + " for files from master");
+		post(FILE_URL, (request, response) -> {
+			masterIp = request.ip();
+			filesToProcess = request.body();
+			log.info("Recieved request on " + FILE_URL + " from " + masterIp);
+			response.status(OK);
+			response.body(SUCCESS);
+			return response.body().toString();
+		});		
+
+		while (filesToProcess == null) {
+			log.info("Waiting for files from master");
+			try {
+				Thread.sleep(10000);
+			} catch (InterruptedException e) {
+				log.severe("Sleep interrupted while waiting for files from master");
+			}
+		}
+
+		log.info("Files to process by mapper " + filesToProcess);
+		//stop();
+	}
+	
 	/**
 	 * step 2
 	 */
 	private void setup() {
+
+		clusterProperties = Utilities.readClusterProperties();
 		s3wrapper = new S3Wrapper(new AmazonS3Client(new BasicAWSCredentials
 				(clusterProperties.getProperty(ACCESS_KEY), clusterProperties.getProperty(SECRET_KEY))));
-		clusterProperties = Utilities.readClusterProperties();
 		jobConfiguration = downloadAndReadJobConfig();
 		log.info("Slave setup done");
 	}
@@ -160,28 +195,7 @@ class SlaveJob implements Runnable {
 		return Utilities.readPropertyFile(localFilePath);
 	}
 
-	private void map() { 
-		log.info("Starting map task");
-		readFiles();
-		processFiles();
-		log.info("All files processed, signalling end of mapper phase");
-		NodeCommWrapper.sendData(masterIp, EOM_URL);
-	}
-
-	private void readFiles() {
-		post(FILE_URL, (request, response) -> {
-			masterIp = request.ip();
-			filesToProcess = request.body();
-			response.status(OK);
-			response.body(SUCCESS);
-			return response.body().toString();
-		});		
-
-		while (filesToProcess == null) {}
-
-		log.info("Files to process by mapper " + filesToProcess);
-		stop();
-	}
+	
 
 	/**
 	 * Step 4
@@ -206,7 +220,7 @@ class SlaveJob implements Runnable {
 			MultiProcessFiles multiProcessFiles= new MultiProcessFiles(files[i], i, jobConfiguration, s3wrapper);
 			executor.execute(multiProcessFiles);
 		}
-		
+		executor.shutdown();
 		try {
 			executor.awaitTermination(20, TimeUnit.MINUTES);
 		} catch (InterruptedException e) {
@@ -219,17 +233,16 @@ class SlaveJob implements Runnable {
 		post("/reduce", (request, response) -> {
 			log.info("Received the request from Master to start reduce task");
 			startReduce = true;
-			processKeys();
-			log.info("All keys processed. Signalling end of reducer phase");
-			NodeCommWrapper.sendData(masterIp, EOR_URL);
 			response.status(OK);
 			response.body(SUCCESS);
 			return response.body().toString();
 		});
 		
 		while (!startReduce) {}
-		log.info("Keys to process " + keysToProcess);
-		stop();
+		processKeys();
+		log.info("All keys processed. Signalling end of reducer phase");
+		NodeCommWrapper.sendData(masterIp, EOR_URL);
+//		stop();
 	}
 
 
@@ -256,7 +269,7 @@ class SlaveJob implements Runnable {
 			MultiKeyProcessing keyProcessing = new MultiKeyProcessing(keys[i], i, jobConfiguration, s3wrapper);
 			executor.execute(keyProcessing);
 		}
-		
+		executor.shutdown();
 		try {
 			executor.awaitTermination(20, TimeUnit.MINUTES);
 		} catch (InterruptedException e) {
@@ -267,12 +280,14 @@ class SlaveJob implements Runnable {
 	private String[] getAllKeysFromInputOfMapreduceFolder() {
 		List<String> keys = new ArrayList<String>();
 		File[] directories = new File(System.getProperty("user.home"), IP_OF_REDUCE).listFiles(File::isDirectory);
-		for (File folder : directories) {
-			try {
-				keys.add(folder.getName().split("_")[0]);
-			} catch (PatternSyntaxException e) {
-				log.severe("The string is not splittable..The string: " 
-							+ folder.getName() + ". Reason: " + e.getMessage());
+		if (directories != null) {
+			for (File folder : directories) {
+				try {
+					keys.add(folder.getName().replaceAll(KEY_DIR_SUFFIX, ""));
+				} catch (PatternSyntaxException e) {
+					log.severe("The string is not splittable..The string: " + folder.getName() + ". Reason: "
+							+ e.getMessage());
+				}
 			}
 		}
 		return (String[])keys.toArray();
@@ -282,8 +297,9 @@ class SlaveJob implements Runnable {
 		log.info("Shutting off Unirest process");
 		try {
 			Unirest.shutdown();
+			s3wrapper.shutDown();
 		} catch (IOException e) {
-			log.severe("Failed to shutdown Unirest process. Reason " + e.getMessage());
+			log.severe("Failed to shutdown Unirest process or TransferManager. Reason " + e.getMessage());
 			log.severe("Stacktrace " + Utilities.printStackTrace(e));
 		}
 	}
