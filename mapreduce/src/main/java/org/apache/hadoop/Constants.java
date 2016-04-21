@@ -49,6 +49,7 @@ public class Constants {
 		public static final String DEFAULT_PORT = "4567";
 		public static final String DEFAULT_DATA = "";
 		public static final String KEY_URL = "/Key";
+		public static final String KEY_TO_SLAVES = "/KeysToSlave";
 		public static final int OK = 200;
 		public static final String SUCCESS = "SUCCESS";
 	}

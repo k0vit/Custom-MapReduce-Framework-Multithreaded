@@ -28,10 +28,12 @@ import java.util.Properties;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 
+import org.apache.hadoop.Constants.CommProperties;
 import org.apache.hadoop.mapreduce.Job;
 
 import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.services.s3.AmazonS3Client;
+import com.mashape.unirest.http.Unirest;
 
 import neu.edu.mapreduce.common.Node;
 import neu.edu.utilities.NodeCommWrapper;
@@ -172,15 +174,31 @@ public class Master {
 	/**
 	 * Step 4 and 6
 	 */
-	private Map<String,Node> keysToNode = new HashMap<>();
-	private int nextSlave = 0;
+	private Map<String,Node> keysToNode;
+	private int nextSlave;
+	private int getNextSlave() {
+		int i=nextSlave;
+		int counter = 0;
+		while( !nodes.get(i).isSlave() ){
+			i = (i+1)%nodes.size();
+			counter++;
+			if( counter > nodes.size() ) {
+				log.severe("No slave found");
+				return -1;
+			}
+		} // There should be some slave
+		return i;
+	}
 	private void listenToEndOfMapReduce(String url, String taskType) {
-		post(url, (request, response) -> {
+		keysToNode = new HashMap<>();
+		nextSlave = 0;
+		post(CommProperties.KEY_TO_SLAVES, (request, response) -> {
 			String key = request.body();
 			response.status(OK);
 			if(!keysToNode.containsKey(key)){
+				nextSlave = getNextSlave(); // i is slave
 				keysToNode.put(key, nodes.get(nextSlave));
-				nextSlave++;
+				nextSlave = (nextSlave+1)%nodes.size();
 			}
 			response.body(keysToNode.get(key).getPrivateIp());
 			noOfMapReduceDone.incrementAndGet();
@@ -188,7 +206,7 @@ public class Master {
 					" " +  taskType + " out of " + (nodes.size() - 1));
 			return response.body().toString();
 		});
-
+		
 		while (noOfMapReduceDone.get() != slaveCount) {
 			try {
 				Thread.sleep(30000);
@@ -198,6 +216,13 @@ public class Master {
 		}
 
 		noOfMapReduceDone.set(0);
+		
+		// send signal to all slave to start reducing.
+		for(Node node : nodes){
+			if( node.isSlave() ) {
+				NodeCommWrapper.sendData(node.getPrivateIp(), "/reduce");
+			}
+		}
 	}
 
 	/**
