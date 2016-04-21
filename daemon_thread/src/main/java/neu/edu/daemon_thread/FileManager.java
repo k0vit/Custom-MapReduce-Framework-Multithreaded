@@ -80,7 +80,11 @@ public class FileManager {
 				for (File key_file : keyFolder.listFiles()) {
 					if ((!doneFiles.contains(key_file.getName())) && key_file.getName().endsWith(DONE_FILE_SUFFIX)) {
 						doneFiles.add(key_file.getName());
-						handleTask(key_file);
+						try{
+							handleTask(key_file);
+						} catch(Exception e){
+							log.log(Level.SEVERE,"Failed to handle file "+key_file.getName()+" :"+e.getMessage());
+						}
 					}
 				}
 			} else if (keyFolder.getName().endsWith(DONE_MAPPING_FILENAME)) {
@@ -97,10 +101,11 @@ public class FileManager {
 	 * query to master, put the file to waiting list
 	 * 
 	 * @param f
+	 * @throws Exception 
 	 * @throws IOException
 	 * @throws InterruptedException
 	 */
-	private static void handleTask(File f) {
+	private static void handleTask(File f) throws IOException{
 		String filename = f.getName();
 		String[] mes = filename.split(FILENAME_DELIMITER);
 		String key = mes[0];
@@ -121,14 +126,19 @@ public class FileManager {
 	 * send request and get result from master for KEY to SlaveIP mapping
 	 * 
 	 * @param key
+	 * @throws Exception 
 	 */
 	private static void getKeyIp(String key) {
 		String mapping = NodeCommWrapper.sendDataAndGetResponse(masterIp, DEFAULT_PORT, QUERY_URL, key);
-		keyIpMap.put(key, mapping);
-		log.info("Get mapping from master, key: " + key + " IP:" + mapping);
+		if (mapping.equals(NodeCommWrapper.FAILRESPONSE)){
+			log.log(Level.SEVERE,"Failed to get mapping for key: "+key);
+		} else{
+			keyIpMap.put(key, mapping);
+			log.info("Get mapping from master, key: " + key + " IP:" + mapping);
+		}
 	}
 
-	private static void moveToReduceFolder(File f, String key, String timeStamp, String slaveId) {
+	private static void moveToReduceFolder(File f, String key, String timeStamp, String slaveId) throws IOException {
 		// TODO use threadpool
 		String newPath = REDUCE_FOLDER_PATH + key + KEY_DIR_SUFFIX + key + timeStamp + slaveId;
 		log.info("moving file " + f.getName() + " to " + newPath);
@@ -136,6 +146,7 @@ public class FileManager {
 			Files.move(Paths.get(f.getAbsolutePath()), Paths.get(newPath), StandardCopyOption.REPLACE_EXISTING);
 		} catch (IOException e) {
 			log.log(Level.SEVERE, "Failed moving file from " + f.getAbsolutePath() + " to " + newPath);
+			throw e;
 		}
 	}
 
