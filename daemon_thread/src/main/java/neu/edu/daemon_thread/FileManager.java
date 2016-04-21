@@ -44,7 +44,7 @@ public class FileManager {
 	
 		
 	/**
-	 * main thread
+	 * keep running until mapping done in this slave and all the files got handled
 	 * @throws InterruptedException
 	 * @throws IOException
 	 */
@@ -61,6 +61,11 @@ public class FileManager {
 		}
 	}
 	
+	/**
+	 * go through the waiting map and find the keys that we have the mapping. handle those files
+	 * @throws IOException
+	 * @throws InterruptedException
+	 */
 	private static void checkWaitingMap() throws IOException, InterruptedException{
 		ArrayList<String> doneKey = new ArrayList<>();
 		for(Map.Entry<String, Set<File>> entry: waitingMap.entrySet()){
@@ -76,6 +81,13 @@ public class FileManager {
 		}
 	}
 	
+	/**
+	 * read the mapping output folder and search for the completed file
+	 * if MAPPING_DONE file (signal) is found, no more searching needed
+	 * @return
+	 * @throws InterruptedException
+	 * @throws IOException
+	 */
 	private static boolean reload() throws InterruptedException, IOException {
 		File folder = new File(MAP_FOLDER);
 		boolean shouldStop = false;
@@ -94,6 +106,18 @@ public class FileManager {
 		return shouldStop;
 	}
 	
+	
+	/**
+	 * decide how we will handle a file.
+	 * 1. if we have the mapping:
+	 *    a. if the mapping points to self, move to the reduce input folder
+	 *    b. if the mapping points to other node, move to s3
+	 * 2. if we dont have the mapping:
+	 * 	  send query to master, put the file to waiting list
+	 * @param f
+	 * @throws IOException
+	 * @throws InterruptedException
+	 */
 	private static void handleTask(File f) throws IOException, InterruptedException {
 		String filename = f.getName();
 		String[] mes = filename.split(FILENAME_DELIMITER);
@@ -114,6 +138,10 @@ public class FileManager {
 		}
 	}
 	
+	/**
+	 * send request to master, query mapping from KEY to SlaveIP
+	 * @param key
+	 */
 	private static void getKeyIp(String key) {
 		NodeCommWrapper.sendData(masterIp, DEFAULT_PORT, QUERY_URL, key);
 	}
@@ -123,13 +151,14 @@ public class FileManager {
 		String newPath = REDUCE_FOLDER_PATH + key + KEY_DIR_SUFFIX + key + timeStamp + slaveId;
 		Files.move(Paths.get(f.getAbsolutePath()), Paths.get(newPath), StandardCopyOption.REPLACE_EXISTING);
 	}
-
+	
 	private static void sendToS3(File f, String key, String timeStamp, String slaveId) {
 		// TODO use threadpool
 		s3Wrapper.uploadFileS3(MAP_OUTPUT_BUCKET, f);
 	}
 	
 	/**
+	 * post method for response from master, get the mapping from KEY to SlaveIP
 	 * expecting response: [key]:[ip]
 	 */
 	private static void receiveKeySlaveIp(){
@@ -143,7 +172,11 @@ public class FileManager {
 			return response.body().toString();
 		});
 	}
-
+	
+	/**
+	 * main method of the background proc
+	 * @param args
+	 */
 	public static void main(String[] args) {
 		masterIp = args[0];
 		selfIp = args[1];
