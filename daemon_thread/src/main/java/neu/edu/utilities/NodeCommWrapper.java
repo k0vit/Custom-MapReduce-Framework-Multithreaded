@@ -5,6 +5,7 @@ import static org.apache.hadoop.Constants.CommProperties.DEFAULT_PORT;
 
 import java.util.logging.Logger;
 
+import com.mashape.unirest.http.HttpResponse;
 import com.mashape.unirest.http.Unirest;
 import com.mashape.unirest.http.exceptions.UnirestException;
 /**
@@ -12,7 +13,7 @@ import com.mashape.unirest.http.exceptions.UnirestException;
  * 
  */
 public class NodeCommWrapper {
-
+	public static String FAILRESPONSE = "FAIL"; 
 	public static void sendData(String nodeIp, String requestUrl) {
 		sendData(nodeIp, DEFAULT_PORT, requestUrl, DEFAULT_DATA);
 	}
@@ -22,11 +23,15 @@ public class NodeCommWrapper {
 	}
 
 	public static void sendData(String nodeIp, String port, String requestUrl, String data) {
+		sendDataAndGetResponse(nodeIp, port, requestUrl, data);
+	}
+	public static String sendDataAndGetResponse(String nodeIp, String port, String requestUrl, String data) {
 		String address = "http://" + nodeIp + ":" + port + "/" + requestUrl;
 		log.info(String.format("Posting %s to %s", data, address));
 		try {
 			//Unirest.setTimeouts(10000, 120000);
-			Unirest.post(address).body(data).asString();
+			HttpResponse<String> res =  Unirest.post(address).body(data).asString();
+			return res.getBody();
 		} catch (UnirestException e) {
 			log.severe("Exception sending post request: " + e.getMessage());
 			log.severe("RETRY sending file");
@@ -37,6 +42,7 @@ public class NodeCommWrapper {
 			}
 			sendData(nodeIp, port, requestUrl, data);
 		}
+		return FAILRESPONSE;
 	}
 
 	private static final Logger log = Logger.getLogger(NodeCommWrapper.class.getName());
